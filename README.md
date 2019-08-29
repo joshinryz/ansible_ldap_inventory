@@ -18,7 +18,7 @@ Groups are auto generated off of OU structure. So for example `cn=computer1,ou=s
             "computer1"
         ]
     }
-    ```
+```
 
 ## Prerequisites
 
