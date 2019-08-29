@@ -1,93 +1,160 @@
-## Ansible ldap inventory script 
-## Author: Joshua Robinett (jshinryz)
-## This script accesses ldap and queries for a list of machines.
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 DOCUMENTATION = '''
      name: ldap_inventory
+     author: Joshua Robinett (@jshinryz)
      plugin_type: inventory
-     short_description: LDAP inventory source
-     extends_documentation_fragment:
-        - inventory_cache
-        - constructed
+     short_description: LDAP Inventory Source
      description:
         - Recursively get inventory from LDAP organizational unit. Creates both hosts and groups from LDAP
-        - Create a YAML config file , it's name must end with ldap_inventory.yml or ldap_inventory.yaml.
-        - The inventory_hostname is always the 'Name' of the computer object in lowercase. 
+        - Setup by creating a YAML config file , it's name must end with ldap_inventory.yml or ldap_inventory.yaml.
+        - The inventory_hostname is pulled from the 'Name' LDAP attribute.
      options:
          plugin:
-             description: "token that ensures this is a source file for the 'ldap_inventory' plugin"
+             description: "Token that ensures this is a source file for the 'ldap_inventory' plugin"
              required: True
              choices: ['ldap_inventory']
          online_only:
-             description: "toggles showing all computer objects vs only machines that can be ICMP pinged"
+             description: 
+                - "Enables checking of hosts using ICMP ping before adding to inventory"
+                - "Note: This may not be compatabile with bubblewrap , which is enabled by default in Ansible Tower"
+             default: False
              type: boolean
-         ldap_lastLogontimeStamp_age:
-             description: "ldap attribute filter for the last logon timestamp field. This value is generally updated every 14 days. Timestamps older indicate inactive computer accounts. Setting to 0 does causes this to not be checked (default)"
+             required: False             
+         account_age:
+             description: 
+                - "LDAP attribute filter for the lastLogonTimestamp field. This value is generally updated every 14 days."
+                - "Timestamps older indicate inactive computer accounts. Setting to 0 disables check. Value is in days"
              default: 0
              required: False
-         ldap_host:
-             description: "ldap connection string for destination server (ldap or ldaps for ssl). Example: ldaps://local.com:636"
+         domain:
+             description:
+                - The domain to search in to retrieve the LAPS password.
+                - This could either be a Windows domain name visible to the Ansible controller from DNS or a specific domain controller FQDN.
+                - Supports either just the domain/host name or an explicit LDAP URI with the domain/host already filled in.
+                - If the URI is set, I(port) and I(scheme) are ignored.
+                - "Examples: "
+                - "  local.com" 
+                - "  dc1.local.com"
+                - "  ldaps://dc1.local.com:636"
+                - "  ldap://dc1.local.com"
              required: True
-         ldap_search_ou:
-             description: "ldap path to search for computer objects. Example: CN=Computers,DC=local,DC=com"
+             type: str
+         port: 
+             description: 
+                - Port used to connect to Domain Controller (389 for ldap, 636 for ldaps)
+                - If I(kdc) is already an LDAP URI then this is ignored.
+             required: False
+             type: int
+         scheme:
+             description: 
+                - The LDAP scheme to use.
+                - When using C(ldap), it is recommended to set C(auth=gssapi), or C(start_tls=yes), otherwise traffic will be in plaintext.
+                - If I(kdc) is already an LDAP URI then this is ignored.
+             choices:
+                - ldap
+                - ldaps
+             default: ldap
+             type: str
+             required: False
+         search_ou:
+             description: 
+                - "LDAP path to search for computer objects." 
+                - "Example: CN=Computers,DC=local,DC=com"
              required: True
-         ldap_bind_dn:
-             description: "ldap user account used to bind our ldap search. Example: username@local.com"
-             required: True
-         ldap_bind_pw:
-             description: "ldap user password used to bind our ldap search. Example: Password123!"
-             required: True
+         username:
+             description: 
+                - "LDAP user account used to bind our LDAP search when auth_type is set to simple" 
+                - "Examples:"
+                - "  username@local.com"
+                - "  domain\\\\username"
+             required: False
+         password:
+             description: 
+                - "LDAP user password used to bind our LDAP search."
+                - "Example: Password123!"
+             required: False
          ldap_filter:
-             description: "filter used to find computer objects. Example: (objectClass=computer)"
+             description: 
+                - "Filter used to find computer objects."
+                - "Example: (objectClass=computer)"
              required: False
              default: "(objectClass=Computer)"
-         ldap_exclude_groups:
-             description: "List of groups to not include. Example: windows_servers,sql_servers"
-             required: False
-             default: ""
+         exclude_groups:
+             description: 
+                - "List of groups to not include." 
+                - "Example: "
+                - "   exclude_groupss: "
+                - "      - group1"
+                - "      - group2"
              type: list
-         ldap_exclude_hosts: 
-             description: "List of computers to not include. Example: host01,host02"
              required: False
-             default: ""
+             default: []
+         exclude_hosts: 
+             description: 
+                - "List of computers to not include."
+                - "Example: "
+                - "   exclude_hosts: "
+                - "      - host01"
+                - "      - host02"
              type: list
+             required: False
+             default: []
          validate_certs:
              description: "Controls if verfication is done of SSL certificates for secure (ldaps://) connections."
              default: True
              required: False
-         use_fqdn:
-             description: "Controls if the hostname is fqdn or shortname"
+         fqdn_format:
+             description: "Controls if the hostname is returned to the inventory as FQDN or shortname"
              default: False
              required: False
              type: bool
+         auth_type:
+             description: 
+                - Defines the type of authentication used when connecting to Active Directory (LDAP).
+                - When using C(simple), the I(username) and (password) options must be set. This requires support of LDAPS (SSL)
+                - When using C(gssapi), run C(kinit) before running Ansible to get a valid Kerberos ticket. 
+             choices:
+                - simple
+                - gssapi
+             default: simple
+             type: str
 '''
 
 EXAMPLES = '''
 # Sample configuration file for LDAP dynamic inventory
     plugin: ldap_inventory
-    ldap_host: "ldaps://ldapserver.local.com:636"
-    ldap_search_ou: "CN=Computers, DC=local, DC=com"
-    ldap_bind_dn: username@local.com
-    ldap_bind_pw: Password123!
-    online_only: True
+    domain: ldaps://ldapserver.local.com:636
+    search_ou: CN=Computers,DC=local,DC=com
+    auth_type: simple
+    username: username@local.com
+    password: Password123!
 '''
 
 import os
 import re
+import traceback
 import subprocess
 import multiprocessing
 from datetime import datetime, timedelta
+from ansible.plugins.inventory import BaseInventoryPlugin, Constructable
+from ansible.utils.display import Display
+from ansible.errors import AnsibleError
+from ansible.module_utils._text import to_native
+from ansible.module_utils.basic import missing_required_lib
+
+LDAP_IMP_ERR = None
 try :
     import ldap
+    import ldapurl
     HAS_LDAP = True
 except ImportError:
     HAS_LDAP = False
+    LDAP_IMP_ERR = traceback.format_exc()
 
-from ansible.plugins.inventory import BaseInventoryPlugin, Constructable
-from ansible.utils.display import Display
 
 display = Display()
 
@@ -121,32 +188,73 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         """
         Set config options
         """
-        self.ldap_host = self.get_option('ldap_host')
-        self.ldap_bind_dn = self.get_option('ldap_bind_dn')
-        self.ldap_bind_pw = self.get_option('ldap_bind_pw')
-        self.ldap_search_ou = self.get_option('ldap_search_ou')
-        self.ldap_lastLogontimeStamp_age = self.get_option('ldap_lastLogontimeStamp_age')
+        self.domain = self.get_option('domain')
+        self.port = self.get_option('port')
+        self.username = self.get_option('username')
+        self.password = self.get_option('password')
+        self.search_ou = self.get_option('search_ou')
+        self.account_age = self.get_option('account_age')
         self.validate_certs = self.get_option('validate_certs')
         self.online_only = self.get_option('online_only')
-        self.group_filter = self.get_option('ldap_exclude_groups')
-        self.hostname_filter = self.get_option('ldap_exclude_hosts')
-        self.use_fqdn = self.get_option('use_fqdn')        
+        self.exclude_groups = self.get_option('exclude_groups')
+        self.exclude_hosts = self.get_option('exclude_hosts')
+        self.use_fqdn = self.get_option('fqdn_format')
+        self.auth_type = self.get_option('auth_type')        
+        self.scheme = self.get_option('scheme')  
 
 
     def _ldap_bind(self):
         """
-        Set ldap binding
+        Set LDAP binding
         """
-        try:
-            self.ldap_session = ldap.initialize(self.ldap_host)
-            self.ldap_session.set_option(ldap.OPT_PROTOCOL_VERSION,ldap.VERSION3)
-            if self.validate_certs is False :
-                self.ldap_session.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_NEVER)
-                self.ldap_session.set_option(ldap.OPT_X_TLS_NEWCTX, 0)
-            self.ldap_session.bind_s(self.ldap_bind_dn, self.ldap_bind_pw, ldap.AUTH_SIMPLE)
 
-        except ldap.LDAPError:
-            print("LDAP ERROR")
+        #ldap.set_option(ldap.OPT_DEBUG_LEVEL, 4095)
+
+
+        if self.auth_type not in ['gssapi', 'simple']:
+            raise AnsibleError("Invalid auth_type value '%s': expecting either 'gssapi', or 'simple'" % self.auth_type)
+        elif self.auth_type == 'gssapi' :
+            if not ldap.SASL_AVAIL:
+                raise AnsibleLookupError("Cannot use auth=gssapi when SASL is not configured with the local LDAP install")
+            if self.username or self.password:
+                raise AnsibleError("Explicit credentials are not supported when auth_type='gssapi'. Call kinit outside of Ansible")
+        elif self.auth_type == 'simple' and not (self.username and  self.password):
+            raise AnsibleError("The username and password values are required when auth_type=simple")
+        
+        if ldapurl.isLDAPUrl(self.domain):
+            ldap_url = ldapurl.LDAPUrl(ldapUrl=self.domain)
+        else:
+            self.port = self.port if self.port else 389 if self.scheme == 'ldap' else 636
+            ldap_url = ldapurl.LDAPUrl(hostport="%s:%d" % (self.domain, self.port), urlscheme=self.scheme)             
+        
+        if self.validate_certs is False :
+            ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_ALLOW) 
+        
+        if not ldap.TLS_AVAIL and conn_url.urlscheme == 'ldaps':
+            raise AnsibleLookupError("Cannot use TLS as the local LDAP installed has not been configured to support it")
+        
+        conn_url = ldap_url.initializeUrl()
+        #self.ldap_session = ldap.initialize(conn_url, trace_level=3)
+        self.ldap_session = ldap.initialize(conn_url)
+        self.ldap_session.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+        self.ldap_session.set_option(ldap.OPT_REFERRALS, 0)
+ 
+        if self.auth_type == 'simple':
+            try:
+                self.ldap_session.bind_s(self.username, self.password, ldap.AUTH_SIMPLE)
+            except ldap.LDAPError as err:
+                raise AnsibleError("Failed to simple bind against LDAP host '%s': %s " % (conn_url, to_native(err)))
+        else:
+            try:
+                self.ldap_session.sasl_gssapi_bind_s()
+            except ldap.AUTH_UNKNOWN as err:
+                # The SASL GSSAPI binding is not installed, e.g. cyrus-sasl-gssapi. Give a better error message than what python-ldap provides
+                raise AnsibleError("Failed to do a sasl bind against LDAP host '%s', the GSSAPI mech is not installed: %s" % (conn_url, to_native(err)))
+            except ldap.LDAPError as err:
+                raise AnsibleError("Failed to do a sasl bind against LDAP host '%s': %s" % (conn_url, to_native(err)))                
+     
+       
+
 
 
     def _detect_group(self, ouString):
@@ -181,20 +289,19 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         Parses the inventory file
         """
         if not HAS_LDAP:
-            raise AnsibleParserError('Please install "python-ldap" Python module as this is required for ldap dynamic inventory')
+            msg = missing_required_lib("python-ldap", url="https://pypi.org/project/python-ldap/")
+            msg += ". Import Error: %s" % LDAP_IMP_ERR
+            raise AnsibleError(msg)
         super(InventoryModule, self).parse(inventory, loader, path)
 
-        config_data = self._read_config_data(path)
-        self._consume_options(config_data)
+        self._read_config_data(path)
         self._set_config()
 
-        #TODO: Get variables from vault and yaml call. Set required options.
-        #Setup our variables - TODO: move to function?
         ldap_search_scope = ldap.SCOPE_SUBTREE
         ldap_search_groupFilter = '(objectClass=computer)'
         ldap_search_attributeFilter = ['name','lastLogontimeStamp']
         
-        timestamp_daysago = datetime.today() - timedelta(days=self.ldap_lastLogontimeStamp_age)
+        timestamp_daysago = datetime.today() - timedelta(days=self.account_age)
         timestamp_filter_epoch = timestamp_daysago.strftime("%s")
         windows_tick = 10000000
         windows_to_epoc_sec = 11644473600
@@ -202,12 +309,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         
         
  
-        # Call ldap query 
+        # Call LDAP query 
         self._ldap_bind()
+
         try:
-            ldap_results = self.ldap_session.search_s(self.ldap_search_ou, ldap_search_scope, ldap_search_groupFilter, ldap_search_attributeFilter)
-        except ldap.LDAPError:
-            print(ldap.LDAPError)
+            ldap_results = self.ldap_session.search_s(self.search_ou, ldap_search_scope, ldap_search_groupFilter, ldap_search_attributeFilter)
+        except ldap.LDAPError as err:
+            raise AnsibleError("Unable to perform query against LDAP server '%s' reason: %s" % (self.domain, to_native(err)))
             ldap_results = []
 
         #Parse the results.
@@ -231,12 +339,12 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             item_time = int(item[1]['lastLogonTimestamp'][0])
             
             #Check for hostname filter
-            if hostName in self.hostname_filter :
-                display.debug("Skipping " + hostName + " as it was found in ldap_exclude_hosts")
+            if any(sub in hostName for sub in self.exclude_hosts) :
+                display.debug("Skipping " + hostName + " as it was found in exclude_hosts")
                 continue
 
             #Check age of lastLogontime vs supplied expiration window.
-            if self.ldap_lastLogontimeStamp_age > 0  and timestamp_filter_windows > item_time and item_time > 0:
+            if self.account_age > 0  and timestamp_filter_windows > item_time and item_time > 0:
                 display.debug("[" + hostName + "] appears to be expired. lastLogontime: " + str(item_time) + " comparison timestamp: " + str(timestamp_filter_windows))
                 continue
             
@@ -244,7 +352,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             
             #Check for groupname filter
             display.debug(groups[-1])
-            if groups[-1] in self.group_filter :
+            if any(sub in groups[-1] for sub in self.exclude_groups) :
                 display.debug("Skipping " + hostName + " as group " + groups[-1] + " was found in ldap_exclude_groups")
                 continue
 

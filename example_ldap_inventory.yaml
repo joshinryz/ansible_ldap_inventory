@@ -1,12 +1,8 @@
 ---
 plugin: ldap_inventory
-ldap_host: 'ldaps://adserver.domain.local:636'
-ldap_bind_dn: user@domain.local
-ldap_bind_pw: "password"
-ldap_search_ou: "OU=Servers,OU=Windows,DC=domain,DC=local"
-validate_certs: True 
-online_only: False  
-ldap_lastLogontimeStamp_age: 15 
-ldap_exclude_groups: "windows_group1,windows_group2"
-ldap_exclude_hosts: "hostname1,hostname2"
-use_fqdn: False
+domain: 'ldaps://adserver.domain.local:636'
+auth_type: simple
+username: user@domain.local
+password: "password"
+search_ou: "OU=Servers,OU=Windows,DC=domain,DC=local"
+account_age: 15 

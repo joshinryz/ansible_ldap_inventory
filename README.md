@@ -45,27 +45,31 @@ Example `ldap_inventory.yaml` :
 ```(yaml)
 ---
 plugin: ldap_inventory
-ldap_host: 'ldaps://adserver.domain.local:636'
-ldap_bind_dn: user@domain.local
-ldap_bind_pw: "password"
-ldap_search_ou: "OU=Servers,OU=Windows,DC=domain,DC=local"
+domain: 'ldaps://adserver.domain.local:636'
+username: user@domain.local
+password: "password"
+search_ou: "OU=Servers,OU=Windows,DC=domain,DC=local"
 ```
 Additional options:
 ```(yaml)
 validate_certs: True 
 online_only: False  
-ldap_lastLogontimeStamp_age: 15 
-ldap_exclude_groups: "windows_group1,windows_group2"
-ldap_exclude_hosts: "hostname1,hostname2"
-use_fqdn: False
+account_age: 15 
+exclude_groups: "windows_group1,windows_group2"
+exclude_hosts: "hostname1,hostname2"
+fqdn_format: False
 
 ```
 **validate_certs** - allows disabling of validation of the SSL cert of the domain controller.
 **online_only** - performs a ping check of the machine before adding to inventory. Note: Does not work under bubblewrap (Tower) due to setuid flag of ping.
-**ldap_lastLogontimeStamp_age** - By default AD objects are updated every 14 days. Sett
-**ldap_exclude_hosts** - exclude a list of hosts from being included in the inventory
-**ldap_exclude_groups** - exclude a list of groups from being included in the inventory
-**use_fqdn** - specifies if we should use FQDN instead of shortname for hosts
+**account_age** - By default AD objects are updated every 14 days. This is the lastLogontimeStamp field on an object. Set to 0 to disable.
+**exclude_hosts** - exclude a list of hosts from being included in the inventory. This will match substrings.
+**exclude_groups** - exclude a list of groups from being included in the inventory. This wil match substrings.
+**port** - used to specify the port for LDAP (usually 389 for non-ssl , 636 for ssl)
+**scheme** - the ldap scheme to use. (ldap or ldaps). This is not required and can be determined from the URI or Port.
+**auth_type** - the type of authentication to use. (gssapi or simple)
+**ldap_filter** - LDAP filter used to find objects. Default : objectClass=Computer . You should not usually need to change this.
+**fqdn_format** - specifies if we should use FQDN instead of shortname for hosts. Default is False.
 
 
 ### Testing the inventory with Ansible
