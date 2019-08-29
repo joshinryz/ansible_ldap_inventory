@@ -85,6 +85,7 @@ fqdn_format: False
 ### Testing the inventory with Ansible
 
 `ansible-inventory -i ldap_inventory --list`
+
 `ansible-inventory -i ldap_inventory --list --vault-id=@prompt` (when vaulted)
 
 ** Running a playbook **
