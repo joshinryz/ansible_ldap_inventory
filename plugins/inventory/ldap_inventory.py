@@ -163,6 +163,63 @@ try:
 except NotImplementedError:
     cpus = 4 #Arbitrary Default
 
+class PagedResultsSearchObject:
+  page_size = 50
+
+  def paged_search_ext_s(self,base,scope,filterstr='(objectClass=Computer)',attrlist=None,attrsonly=0,serverctrls=None,clientctrls=None,timeout=-1,sizelimit=0):
+    """
+    Behaves exactly like LDAPObject.search_ext_s() but internally uses the
+    simple paged results control to retrieve search results in chunks.
+    
+    This is non-sense for really large results sets which you would like
+    to process one-by-one
+    """
+    req_ctrl = ldap.controls.SimplePagedResultsControl(True,size=self.page_size,cookie='')
+
+    # Send first search request
+    msgid = self.search_ext(
+      base,
+      ldap.SCOPE_SUBTREE,
+      filterstr,
+      attrlist,
+      serverctrls=(serverctrls or [])+[req_ctrl]
+    )
+
+    result_pages = 0
+    all_results = []
+    
+    while True:
+      rtype, rdata, rmsgid, rctrls = self.result3(msgid)
+      all_results.extend(rdata)
+      result_pages += 1
+      # Extract the simple paged results response control
+      pctrls = [
+        c
+        for c in rctrls
+        if c.controlType == ldap.controls.SimplePagedResultsControl.controlType
+      ]
+      if pctrls:
+        if pctrls[0].cookie:
+            # Copy cookie from response control to request control
+            req_ctrl.cookie = pctrls[0].cookie
+            msgid = self.search_ext(
+              base,
+              ldap.SCOPE_SUBTREE,
+              filterstr,
+              attrlist,
+              serverctrls=(serverctrls or [])+[req_ctrl]
+            )
+        else:
+            break
+    return result_pages,all_results
+
+
+class MyLDAPObject(ldap.ldapobject.LDAPObject,PagedResultsSearchObject):
+  pass
+
+
+
+
 def check_online(hostObject):
     try:
         hostname = hostObject[1]['name'][0]
@@ -234,8 +291,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             raise AnsibleLookupError("Cannot use TLS as the local LDAP installed has not been configured to support it")
         
         conn_url = ldap_url.initializeUrl()
-        #self.ldap_session = ldap.initialize(conn_url, trace_level=3)
-        self.ldap_session = ldap.initialize(conn_url)
+        #self.ldap_session = MyLDAPObject(conn_url, trace_level=3)  # higher trace levels
+        self.ldap_session = MyLDAPObject(conn_url)
+        self.ldap_session.page_size = 900
         self.ldap_session.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
         self.ldap_session.set_option(ldap.OPT_REFERRALS, 0)
  
@@ -281,7 +339,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         if super(InventoryModule, self).verify_file(path):
             if path.endswith(('ldap_inventory.yml', 'ldap_inventory.yaml')):
                 return True
-        display.debug("ldap inventory filename must end with 'ldap_inventory.yml' or 'ldap_inventory.yaml'")
+        display.debug("DEBUG: ldap inventory filename must end with 'ldap_inventory.yml' or 'ldap_inventory.yaml'")
         return False
 
     def parse(self, inventory, loader, path, cache=False):
@@ -313,25 +371,29 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self._ldap_bind()
 
         try:
-            ldap_results = self.ldap_session.search_s(self.search_ou, ldap_search_scope, ldap_search_groupFilter, ldap_search_attributeFilter)
+            pages, ldap_results = self.ldap_session.paged_search_ext_s(base=self.search_ou, scope=ldap_search_scope, filterstr=ldap_search_groupFilter, attrlist=ldap_search_attributeFilter)
+        
         except ldap.LDAPError as err:
             raise AnsibleError("Unable to perform query against LDAP server '%s' reason: %s" % (self.domain, to_native(err)))
             ldap_results = []
-
+        display.debug('DEBUG: ldap_results Received %d results in %d pages.' % (len(ldap_results),pages) )
+        
         #Parse the results.
         if self.online_only : 
             pool = multiprocessing.Pool(processes=cpus)
             parsedResult = pool.map(check_online, ldap_results)
         else:
             parsedResult = ldap_results
-
+        
         for item in parsedResult:
-
+            if isinstance(item[1],dict) is False or len(item[1]) != len(ldap_search_attributeFilter) :
+                display.debug("DEBUG: Skipping an possible corrupt object " + str(item[1]) + " " + str(item[0]))
+                continue
             if self.online_only and item[2]['online'] is False :
                 continue
 
             hostName = str(item[1]['name'][0].decode("utf-8").lower())
-
+            #display.debug("DEBUG: " + hostName + " processing host")
             if self.use_fqdn is True :
                 domainName = "." + str(item[0]).split('DC=',1)[1].replace(',DC=','.')
                 hostName = hostName + domainName.lower()
@@ -340,20 +402,22 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             
             #Check for hostname filter
             if any(sub in hostName for sub in self.exclude_hosts) :
-                display.debug("Skipping " + hostName + " as it was found in exclude_hosts")
+                display.debug("DEBUG: Skipping " + hostName + " as it was found in exclude_hosts")
                 continue
-
             #Check age of lastLogontime vs supplied expiration window.
             if self.account_age > 0  and timestamp_filter_windows > item_time and item_time > 0:
-                display.debug("[" + hostName + "] appears to be expired. lastLogontime: " + str(item_time) + " comparison timestamp: " + str(timestamp_filter_windows))
+                display.debug("DEBUG: [" + hostName + "] appears to be expired. lastLogontime: " + str(item_time) + " comparison timestamp: " + str(timestamp_filter_windows))
                 continue
             
             groups = self._detect_group(item[0])
-            
+            if len(groups) < 1 : 
+                display.debug('DEBUG: No OUs were detected in ' +str(item[0]))
+                continue
+                
             #Check for groupname filter
-            display.debug(groups[-1])
+            #display.debug("DEBUG: " + hostName + " primary group is " + groups[-1])
             if any(sub in groups[-1] for sub in self.exclude_groups) :
-                display.debug("Skipping " + hostName + " as group " + groups[-1] + " was found in ldap_exclude_groups")
+                display.debug("DEBUG: Skipping " + hostName + " as group " + groups[-1] + " was found in ldap_exclude_groups")
                 continue
 
             self.inventory.add_host(hostName)
