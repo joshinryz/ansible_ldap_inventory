@@ -222,7 +222,7 @@ class MyLDAPObject(ldap.ldapobject.LDAPObject,PagedResultsSearchObject):
 
 def check_online(hostObject):
     try:
-        hostname = hostObject[1]['name'][0]
+        hostname = hostObject[1]['name'][0].decode('utf-8')
     except:
         returnObject = hostObject + ({'online':False},)
         return returnObject
