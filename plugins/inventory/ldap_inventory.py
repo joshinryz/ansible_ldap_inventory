@@ -228,8 +228,8 @@ def check_online(hostObject):
         return returnObject
     result = subprocess.Popen(["ping -c 1 " + hostname  + ' >/dev/null 2>&1; echo $?'],shell=True,stdout=subprocess.PIPE)
     out,err  = result.communicate()
-    out = str(out).replace("\n","")
-    err = str(err).replace("\n","")
+    out = out.decode('utf-8').replace("\n","")
+    err = err.decode('utf-8').replace("\n","")
     if(out == "0"):
         returnObject = hostObject + ({'online':True},)
         return returnObject
