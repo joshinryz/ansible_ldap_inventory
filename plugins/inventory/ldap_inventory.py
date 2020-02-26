@@ -64,7 +64,7 @@ DOCUMENTATION = '''
              description: 
                 - "LDAP path to search for computer objects." 
                 - "Example: CN=Computers,DC=local,DC=com"
-             required: True
+             required: False
          username:
              description: 
                 - "LDAP user account used to bind our LDAP search when auth_type is set to simple" 
@@ -250,9 +250,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         """
         self.domain = self.get_option('domain')
         self.port = self.get_option('port')
-        self.username = self.get_option('username')
-        self.password = self.get_option('password')
-        self.search_ou = self.get_option('search_ou')
+        self.username = os.getenv('LDAP_USER') or self.get_option('username')
+        self.password = os.getenv('LDAP_PASS') or self.get_option('password')
+        self.search_ou = os.getenv('SEARCH_OU') or self.get_option('search_ou')
         self.account_age = self.get_option('account_age')
         self.validate_certs = self.get_option('validate_certs')
         self.online_only = self.get_option('online_only')
@@ -358,6 +358,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self._read_config_data(path)
         self._set_config()
 
+        if not self.search_ou:
+            raise AnsibleError("Search base not set in search_ou config option or SEARCH_OU environmental variable")
+        
         ldap_search_scope = ldap.SCOPE_SUBTREE
         ldap_search_groupFilter = '(objectClass=computer)'
         ldap_search_attributeFilter = ['name','lastLogontimeStamp']

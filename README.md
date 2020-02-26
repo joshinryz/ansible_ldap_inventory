@@ -25,24 +25,26 @@ Groups are auto generated off of OU structure. So for example `cn=computer1,ou=s
 The ldap inventory works with python2 and python3.
 
 **The following package is required :**
-* [`python-ldap`](https://www.python-ldap.org/en/latest/) 
+* [python-ldap](https://www.python-ldap.org/en/latest/) 
 
 It can be installed in one of the following ways : 
 
-`pip install -r requirements.txt`
+*pip install -r requirements.txt*
 
 or
 
-`pip install python-ldap`
+*pip install python-ldap*
 
-### Configuration
+## Configuration Example
 Place the file `ldap_inventory.py` into your base folder under `.\plugins\inventory\`
 
-Create a file that ends with `ldap_inventory.yaml` in your base directory. 
-It is recommended you vault the entire file (until ansible supports vaulted strings in config files) `ansible-vault edit ldap_inventory.yaml`
+Create a file that ends with `ldap_inventory.yaml` in your base directory.
+It is recommended you vault the entire file if storing passwords in plaintext(until ansible supports vaulted strings in config files) `ansible-vault edit ldap_inventory.yaml`
+
+>`LDAP_USERNAME`, `LDAP_PASSWORD` and `SEARCH_OU` environmental variables can be used instead of including them in the configuration file. This is helpful if using the plugin in [Ansible Tower/AWX](https://github.com/ansible/awx).
 
 Example `ldap_inventory.yaml` :
-```(yaml)
+```yaml
 ---
 plugin: ldap_inventory
 domain: 'ldaps://adserver.domain.local:636'
@@ -50,39 +52,118 @@ username: user@domain.local
 password: "password"
 search_ou: "OU=Servers,OU=Windows,DC=domain,DC=local"
 ```
-Additional options:
-```(yaml)
-validate_certs: True 
-online_only: False  
-account_age: 15 
-exclude_groups: "windows_group1,windows_group2"
-exclude_hosts: "hostname1,hostname2"
-fqdn_format: False
 
+## Parameters
+### `account_age`
+> LDAP attribute filter for the lastLogonTimestamp field. This value is generally updated every 14 days. Timestamps older indicate inactive computer accounts. Setting to 0 disables check. Value is in days.
+
+* default: `0`
+
+### `auth_type`
+> Defines the type of authentication used when connecting to Active Directory (LDAP). When using `simple`, the **`username`** and **`password`** parameters must be set. When using `gssapi`, run **kinit** before running Ansible to get a valid Kerberos ticket.
+
+* allowed values: `simple`, `gssapi`
+* default: `simple`
+
+### `domain`
+> The domain to search in to retrieve inventory. This could either be a Windows domain name visible to the Ansible controller from DNS or a specific domain controller FQDN. Supports either just the domain/host name or an explicit LDAP URI with the domain/host already filled in. If the URI is set, **`port`** and **`scheme`** are ignored.
+* required: true
+
+**examples:**
+```yaml
+domain: "local.com"
 ```
-**validate_certs** - allows disabling of validation of the SSL cert of the domain controller.
+```yaml
+domain: "dc1.local.com"
+```
+```yaml
+domain: "ldaps://dc1.local.com:636"
+```
+```yaml
+domain: "ldap://dc1.local.com"
+```
 
-**online_only** - performs a ping check of the machine before adding to inventory. Note: Does not work under bubblewrap (Tower) due to setuid flag of ping.
+### `exclude_groups`
+>Exclude a list of groups from being included in the inventory. This will match substrings.
+* default: `""`
 
-**account_age** - By default AD objects are updated every 14 days. This is the lastLogontimeStamp field on an object. Set to 0 to disable.
+**example:**
+```yaml
+exclude_groups: "windows_group1,windows_group2"
+```
 
-**exclude_hosts** - exclude a list of hosts from being included in the inventory. This will match substrings.
+### `exclude_hosts`
+>Exclude a list of hosts from being included in the inventory. This will match substrings.
+* default: `""`
 
-**exclude_groups** - exclude a list of groups from being included in the inventory. This wil match substrings.
+**example:**
+```yaml
+exclude_hosts: "hostname1,hostname2"
+```
 
-**port** - used to specify the port for LDAP (usually 389 for non-ssl , 636 for ssl)
+### `fqdn_format`
+>Specifies if we should use FQDN instead of shortname for hosts.
+* Allow Values: `True`, `False`
+* Default: `False`
 
-**scheme** - the ldap scheme to use. (ldap or ldaps). This is not required and can be determined from the URI or Port.
+### `ldap_filter`
+>LDAP filter used to find objects. You should not usually need to change this.
+* Allowed Values: [RFC 4515](https://tools.ietf.org/html/rfc4515.html)
+* Default: `"(objectClass=Computer)"`
 
-**auth_type** - the type of authentication to use. (gssapi or simple)
+### `online_only`
+>Performs a ping check of the machine before adding to inventory. Note: Does not work under bubblewrap (Tower/AWX) due to setuid flag of ping.
+* Allow Values: `True`, `False`
+* Default: `False`
 
-**ldap_filter** - LDAP filter used to find objects. Default : objectClass=Computer . You should not usually need to change this.
+### `password`
+>Password used to authenticate LDAP user when **`auth_type`** is set to `simple`. Can use environmental variable `LDAP_PASSWORD` instead of setting in config.
+* required: true
 
-**fqdn_format** - specifies if we should use FQDN instead of shortname for hosts. Default is False.
+**example:**
+```yaml
+password: "Password123!"
+```
+
+### `port`
+>Port used to connect to Domain Controller. If **`domain`** URI contains ldap or ldaps this is ignored.
+* Default: `389` for ldap, `636` for ldaps
+
+### `scheme`
+>The ldap scheme to use. When using `ldap`, it is recommended to set `auth=gssapi`, or `start_tls=yes`, otherwise traffic will be in plaintext. This parameter is not required and can be determined from the **`domain`** URI or **`port`**.
+* Allowed Values: `ldap`, `ldaps`
+* Default: `ldap`
+
+### `search_ou`
+>LDAP path to search for computer objects. Can use environmental variable `SEARCH_OU` instead of setting in config.
+* required: true
+
+**example:**
+```yaml
+search_ou: "CN=Computers,DC=local,DC=com"
+```
+
+### `username`
+>LDAP user account used to bind LDAP search when **`auth_type`** is set to `simple`. Can use environmental variable `LDAP_USER` instead of setting in config.
+* required: true
+
+**examples:**
+```yaml
+username: "username@local.com"
+```
+```yaml
+username: "domain\\\\username"
+```
+
+### `validate_certs`
+>Controls if verfication is done of SSL certificates for secure (ldaps://) connections.
+* Allow Values: `True`, `False`
+* Default: `True`
 
 
 
-### Testing the inventory with Ansible
+
+## Testing
 
 `ansible-inventory -i ldap_inventory --list`
 
