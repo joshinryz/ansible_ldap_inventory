@@ -261,6 +261,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self.use_fqdn = self.get_option('fqdn_format')
         self.auth_type = self.get_option('auth_type')        
         self.scheme = self.get_option('scheme')  
+        self.ldap_filter = self.get_option('ldap_filter')
 
 
     def _ldap_bind(self):
@@ -362,7 +363,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             raise AnsibleError("Search base not set in search_ou config option or SEARCH_OU environmental variable")
         
         ldap_search_scope = ldap.SCOPE_SUBTREE
-        ldap_search_groupFilter = '(objectClass=computer)'
+        if not self.ldap_filter:
+            ldap_search_groupFilter = '(objectClass=Computer)'
+        else:
+            ldap_search_groupFilter = self.ldap_filter  # Todo check if query is valid
         ldap_search_attributeFilter = ['name','lastLogontimeStamp']
         
         timestamp_daysago = datetime.today() - timedelta(days=self.account_age)
