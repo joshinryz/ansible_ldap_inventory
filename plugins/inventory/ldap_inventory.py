@@ -324,7 +324,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         Detect groups in OU string
         """
         groups = []
-        foundOUs = re.findall('OU=([A-Za-z0-9 ]{1,})',ouString)
+        foundOUs = re.findall('OU=([A-Za-z0-9_ ]{1,})',ouString)
         foundOUs = [x.lower() for x in foundOUs]
         foundOUs = [x.replace("-","_") for x in foundOUs]
         foundOUs = [x.replace(" ","_") for x in foundOUs]
