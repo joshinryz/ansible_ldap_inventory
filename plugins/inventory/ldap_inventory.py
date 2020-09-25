@@ -155,6 +155,7 @@ except ImportError:
     HAS_LDAP = False
     LDAP_IMP_ERR = traceback.format_exc()
 
+hostname_field = "name"
 
 display = Display()
 
@@ -162,6 +163,11 @@ try:
     cpus = multiprocessing.cpu_count()
 except NotImplementedError:
     cpus = 4 #Arbitrary Default
+
+if not HAS_LDAP:
+    msg = missing_required_lib("python-ldap", url="https://pypi.org/project/python-ldap/")
+    msg += ". Import Error: %s" % LDAP_IMP_ERR
+    raise AnsibleError(msg)
 
 class PagedResultsSearchObject:
   page_size = 50
@@ -222,7 +228,7 @@ class MyLDAPObject(ldap.ldapobject.LDAPObject,PagedResultsSearchObject):
 
 def check_online(hostObject):
     try:
-        hostname = hostObject[1]['name'][0].decode('utf-8')
+        hostname = hostObject[1][hostname_field][0].decode('utf-8')
     except:
         returnObject = hostObject + ({'online':False},)
         return returnObject
@@ -350,10 +356,6 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         """
         Parses the inventory file
         """
-        if not HAS_LDAP:
-            msg = missing_required_lib("python-ldap", url="https://pypi.org/project/python-ldap/")
-            msg += ". Import Error: %s" % LDAP_IMP_ERR
-            raise AnsibleError(msg)
         super(InventoryModule, self).parse(inventory, loader, path)
 
         self._read_config_data(path)
@@ -367,7 +369,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             ldap_search_groupFilter = '(objectClass=Computer)'
         else:
             ldap_search_groupFilter = self.ldap_filter  # Todo check if query is valid
-        ldap_search_attributeFilter = ['name','lastLogontimeStamp']
+        ldap_search_attributeFilter = [hostname_field,'lastLogontimeStamp']
         
         timestamp_daysago = datetime.today() - timedelta(days=self.account_age)
         timestamp_filter_epoch = timestamp_daysago.strftime("%s")
@@ -402,7 +404,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             if self.online_only and item[2]['online'] is False :
                 continue
 
-            hostName = str(item[1]['name'][0].decode("utf-8").lower())
+            hostName = str(item[1][hostname_field][0].decode("utf-8").lower())
             #display.debug("DEBUG: " + hostName + " processing host")
             if self.use_fqdn is True :
                 domainName = "." + str(item[0]).split('DC=',1)[1].replace(',DC=','.')
@@ -441,6 +443,3 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                     self.inventory.add_child('all', groups[i])
                 if groups[i] == groups[-1]:
                     self.inventory.add_child(groups[i], hostName)
-
-
-
