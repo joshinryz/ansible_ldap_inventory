@@ -24,6 +24,21 @@ DOCUMENTATION = '''
              default: False
              type: boolean
              required: False             
+         group_membership:
+             description:
+                - "Enables parsing the ldap groups that the computer account is a memberOf"
+                - "Groups are returned lower case."
+             default: False
+             type: boolean
+             required: False
+         group_membership_filter:
+             description:
+                - When we query for Group membership of the computer object, this allows you to only include names that match the pattern provided.
+                - For example, if you only wanted groups that start with security-*
+                - "  group_membership_filter: security-*"
+             required: False
+             default: "*"
+             type: str
          account_age:
              description: 
                 - "LDAP attribute filter for the lastLogonTimestamp field. This value is generally updated every 14 days."
@@ -64,7 +79,7 @@ DOCUMENTATION = '''
              description: 
                 - "LDAP path to search for computer objects." 
                 - "Example: CN=Computers,DC=local,DC=com"
-             required: False
+             required: True
          username:
              description: 
                 - "LDAP user account used to bind our LDAP search when auth_type is set to simple" 
@@ -87,7 +102,7 @@ DOCUMENTATION = '''
              description: 
                 - "List of groups to not include." 
                 - "Example: "
-                - "   exclude_groupss: "
+                - "   exclude_groups: "
                 - "      - group1"
                 - "      - group2"
              type: list
@@ -120,7 +135,6 @@ DOCUMENTATION = '''
              choices:
                 - simple
                 - gssapi
-             default: simple
              type: str
 '''
 
@@ -259,6 +273,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self.username = os.getenv('LDAP_USER') or self.get_option('username')
         self.password = os.getenv('LDAP_PASS') or self.get_option('password')
         self.search_ou = os.getenv('SEARCH_OU') or self.get_option('search_ou')
+        self.group_membership = self.get_option('group_membership')
         self.account_age = self.get_option('account_age')
         self.validate_certs = self.get_option('validate_certs')
         self.online_only = self.get_option('online_only')
@@ -268,6 +283,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self.auth_type = self.get_option('auth_type')        
         self.scheme = self.get_option('scheme')  
         self.ldap_filter = self.get_option('ldap_filter')
+        self.group_membership_filter = self.get_option('group_membership_filter')
 
 
     def _ldap_bind(self):
@@ -277,16 +293,20 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
 
         #ldap.set_option(ldap.OPT_DEBUG_LEVEL, 4095)
 
-
-        if self.auth_type not in ['gssapi', 'simple']:
-            raise AnsibleError("Invalid auth_type value '%s': expecting either 'gssapi', or 'simple'" % self.auth_type)
-        elif self.auth_type == 'gssapi' :
+        if self.auth_type == 'gssapi' :
             if not ldap.SASL_AVAIL:
                 raise AnsibleLookupError("Cannot use auth=gssapi when SASL is not configured with the local LDAP install")
             if self.username or self.password:
                 raise AnsibleError("Explicit credentials are not supported when auth_type='gssapi'. Call kinit outside of Ansible")
         elif self.auth_type == 'simple' and not (self.username and  self.password):
             raise AnsibleError("The username and password values are required when auth_type=simple")
+        else:
+            if self.username and  self.password:
+                self.auth_type = 'simple'
+            elif ldap.SASL_AVAIL:
+                self.auth_type == 'gssapi'
+            else:
+                raise AnsibleError("Invalid auth_type value '%s': expecting either 'gssapi', or 'simple'" % self.auth_type)
         
         if ldapurl.isLDAPUrl(self.domain):
             ldap_url = ldapurl.LDAPUrl(ldapUrl=self.domain)
@@ -330,7 +350,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         Detect groups in OU string
         """
         groups = []
-        foundOUs = re.findall('OU=([A-Za-z0-9_ ]{1,})',ouString)
+        foundOUs = re.findall('(?u)OU=(\w{1,})',ouString)
         foundOUs = [x.lower() for x in foundOUs]
         foundOUs = [x.replace("-","_") for x in foundOUs]
         foundOUs = [x.replace(" ","_") for x in foundOUs]
@@ -366,9 +386,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         
         ldap_search_scope = ldap.SCOPE_SUBTREE
         if not self.ldap_filter:
-            ldap_search_groupFilter = '(objectClass=Computer)'
+            ldap_type_groupFilter = '(objectClass=Computer)'
         else:
-            ldap_search_groupFilter = self.ldap_filter  # Todo check if query is valid
+            ldap_type_groupFilter = self.ldap_filter  # Todo check if query is valid
         ldap_search_attributeFilter = [hostname_field,'lastLogontimeStamp']
         
         timestamp_daysago = datetime.today() - timedelta(days=self.account_age)
@@ -383,7 +403,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self._ldap_bind()
 
         try:
-            pages, ldap_results = self.ldap_session.paged_search_ext_s(base=self.search_ou, scope=ldap_search_scope, filterstr=ldap_search_groupFilter, attrlist=ldap_search_attributeFilter)
+            pages, ldap_results = self.ldap_session.paged_search_ext_s(base=self.search_ou, scope=ldap_search_scope, filterstr=ldap_type_groupFilter, attrlist=ldap_search_attributeFilter)
         
         except ldap.LDAPError as err:
             raise AnsibleError("Unable to perform query against LDAP server '%s' reason: %s" % (self.domain, to_native(err)))
@@ -396,22 +416,30 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             parsedResult = pool.map(check_online, ldap_results)
         else:
             parsedResult = ldap_results
-        
+
         for item in parsedResult:
             if isinstance(item[1],dict) is False or len(item[1]) != len(ldap_search_attributeFilter) :
-                display.debug("DEBUG: Skipping an possible corrupt object " + str(item[1]) + " " + str(item[0]))
+                display.debug("DEBUG: Skipping an possible corrupt object " + item[1] + " " + item[0])
                 continue
             if self.online_only and item[2]['online'] is False :
                 continue
+            hostName = item[1][hostname_field][0].decode("utf-8").lower()
+            display.debug("DEBUG: " + hostName + " processing host")
+            pattern = re.compile('^DC')
+            root_split = item[0].split(',')
+            root_match = [s for s in root_split if pattern.match(s) ]
+            root_ou = ','.join(root_match)
+            #root_ou = "OU=Groups,%s" % root_ou
+            ldapGroups = []
 
-            hostName = str(item[1][hostname_field][0].decode("utf-8").lower())
-            #display.debug("DEBUG: " + hostName + " processing host")
             if self.use_fqdn is True :
-                domainName = "." + str(item[0]).split('DC=',1)[1].replace(',DC=','.')
+                domainName = "." + item[0].split('DC=',1)[1].replace(',DC=','.')
                 hostName = hostName + domainName.lower()
             
             item_time = int(item[1]['lastLogonTimestamp'][0])
             
+
+
             #Check for hostname filter
             if any(sub in hostName for sub in self.exclude_hosts) :
                 display.debug("DEBUG: Skipping " + hostName + " as it was found in exclude_hosts")
@@ -421,25 +449,53 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 display.debug("DEBUG: [" + hostName + "] appears to be expired. lastLogontime: " + str(item_time) + " comparison timestamp: " + str(timestamp_filter_windows))
                 continue
             
-            groups = self._detect_group(item[0])
-            if len(groups) < 1 : 
-                display.debug('DEBUG: No OUs were detected in ' +str(item[0]))
-                continue
-                
+            ouGroups = self._detect_group(item[0])
+            
+            
+            if self.group_membership:
+                groupFilter = "(&(objectClass=group)(member:1.2.840.113556.1.4.1941:=%s)(name=%s))" % (item[0], self.group_membership_filter)
+                try:
+                    ldapSearch = self.ldap_session.search_ext_s(base=root_ou, scope=ldap_search_scope, filterstr=groupFilter, attrlist=["cn"])
+                except ldap.LDAPError as err:
+                    raise AnsibleError("Unable to perform query against LDAP server '%s' reason: %s" % (self.domain, to_native(err)))
+                if len(ldapSearch) > 0 : 
+                    for g in ldapSearch : 
+                        if re.search("^cn", str(g[0]).lower()):
+                            groupName = g[0].lower().split(",",1)[0][3:]
+                            ldapGroups.append(groupName)
+                #Debug the search settings used to find groups. 
+                display.debug("DEBUG: ldap search for groups using settings - base=%s, scope=%s, filterstr=%s" % (root_ou,ldap_search_scope,groupFilter) )
+
             #Check for groupname filter
-            #display.debug("DEBUG: " + hostName + " primary group is " + groups[-1])
-            if any(sub in groups[-1] for sub in self.exclude_groups) :
-                display.debug("DEBUG: Skipping " + hostName + " as group " + groups[-1] + " was found in ldap_exclude_groups")
+            display.debug("DEBUG: Primary group for  %s detected as %s" % (hostName, ouGroups[-1]))
+            
+            if any(sub in ouGroups[-1] for sub in self.exclude_groups) :
+                display.debug("DEBUG: Skipping %s as group %s was found in ldap_exclude_groups" % (hostName, sub))
                 continue
+            
+            if any(sub in ldapGroups for sub in self.exclude_groups) :
+                display.debug("DEBUG: Skipping %s as group %s was found in ldap_exclude_groups" % (hostName, sub))
+                continue
+            
+            
+            if (len(ouGroups) < 1) and (len(ldapGroups) < 1): 
+                display.debug('DEBUG: No Groups were detected for %s' % hostName)
+                continue
+            
 
             self.inventory.add_host(hostName)
             
-            for i in range(len(groups)):
+            for i in range(len(ouGroups)):
                 if i > 0 :
-                    self.inventory.add_group(groups[i])
-                    self.inventory.add_child(groups[i-1], groups[i])
+                    self.inventory.add_group(ouGroups[i])
+                    self.inventory.add_child(ouGroups[i-1], ouGroups[i])
                 else: 
-                    self.inventory.add_group(groups[i])
-                    self.inventory.add_child('all', groups[i])
-                if groups[i] == groups[-1]:
-                    self.inventory.add_child(groups[i], hostName)
+                    self.inventory.add_group(ouGroups[i])
+                    self.inventory.add_child('all', ouGroups[i])
+                if ouGroups[i] == ouGroups[-1]:
+                    self.inventory.add_child(ouGroups[i], hostName)
+            
+            for group in ldapGroups:
+                    self.inventory.add_group(group)
+                    self.inventory.add_child(group, hostName)
+
