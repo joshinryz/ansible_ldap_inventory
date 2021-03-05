@@ -1,7 +1,8 @@
 # Ansible LDAP Inventory Plugin
 
 This plugin was designed to query active directory and get a list of machines to use as an inventory.
-Groups are auto generated off of OU structure. So for example `cn=computer1,ou=servers,ou=windows,dc=mycompany,dc=local` would create the following inventory :
+Groups are auto generated off of OU structure and optionally group membership. 
+So for example `cn=computer1,ou=servers,ou=windows,dc=mycompany,dc=local` would create the following inventory :
 ```
     "all": {
         "children": [
@@ -81,6 +82,23 @@ domain: "ldaps://dc1.local.com:636"
 ```
 ```yaml
 domain: "ldap://dc1.local.com"
+```
+### `group_membership`
+>Enables parsing the ldap groups that the computer account is a memberOf. Groups are returned lower case.
+* default: `"False"`
+
+**example:**
+```yaml
+group_membership: True
+```
+
+### `group_membership_filter`
+>When we query for Group membership of the computer object, this allows you to only include names that match the pattern provided.
+* default: `""`
+
+**example:**
+```yaml
+group_membership: "security-*"
 ```
 
 ### `exclude_groups`
