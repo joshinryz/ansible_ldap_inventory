@@ -419,7 +419,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
 
         for item in parsedResult:
             if isinstance(item[1],dict) is False or len(item[1]) != len(ldap_search_attributeFilter) :
-                display.debug("DEBUG: Skipping an possible corrupt object " + item[1] + " " + item[0])
+                display.debug("DEBUG: Skipping an possible corrupt object " + str(item[1]) + " " + str(item[0]))
                 continue
             if self.online_only and item[2]['online'] is False :
                 continue
