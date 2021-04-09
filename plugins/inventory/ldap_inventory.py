@@ -136,6 +136,11 @@ DOCUMENTATION = '''
                 - simple
                 - gssapi
              type: str
+         extra_groups:
+             description: "A list of additional groups to add under 'all' and contain all discovered hosts."
+             default: []
+             required: False
+             type: list
 '''
 
 EXAMPLES = '''
@@ -284,6 +289,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         self.scheme = self.get_option('scheme')  
         self.ldap_filter = self.get_option('ldap_filter')
         self.group_membership_filter = self.get_option('group_membership_filter')
+        self.extra_groups = self.get_option('extra_groups')
 
 
     def _ldap_bind(self):
@@ -499,3 +505,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                     self.inventory.add_group(group)
                     self.inventory.add_child(group, hostName)
 
+            for eg in self.extra_groups:
+                self.inventory.add_group(eg)
+                self.inventory.add_child('all', eg)
+                self.inventory.add_child(eg, hostName)
