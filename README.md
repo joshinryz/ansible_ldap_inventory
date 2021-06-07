@@ -119,6 +119,22 @@ exclude_groups: "windows_group1,windows_group2"
 exclude_hosts: "hostname1,hostname2"
 ```
 
+### `extra_groups`
+>Add a list of groups to the inventory under the top-level `all` group and place
+>all hosts into these groups.  This is useful in an AWX/Tower scenario where
+>hosts need to be put into a named group to pick up variable values specific to
+>that.  AWX/Tower performs this variable assignment at inventory sync time and
+>not playbook execution time.
+* default: []
+
+**example:**
+```yaml
+extra_groups:
+  - foo
+  - bar
+  - baz
+```
+
 ### `fqdn_format`
 >Specifies if we should use FQDN instead of shortname for hosts.
 * Allow Values: `True`, `False`
