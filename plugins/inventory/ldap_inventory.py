@@ -395,7 +395,11 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             ldap_type_groupFilter = '(objectClass=Computer)'
         else:
             ldap_type_groupFilter = self.ldap_filter  # Todo check if query is valid
-        ldap_search_attributeFilter = [hostname_field,'lastLogontimeStamp']
+        
+        if self.account_age > 0:
+            ldap_search_attributeFilter = [hostname_field,'lastLogontimeStamp']
+        else:
+            ldap_search_attributeFilter = [hostname_field]
         
         timestamp_daysago = datetime.today() - timedelta(days=self.account_age)
         timestamp_filter_epoch = timestamp_daysago.strftime("%s")
@@ -442,7 +446,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 domainName = "." + item[0].split('DC=',1)[1].replace(',DC=','.')
                 hostName = hostName + domainName.lower()
             
-            item_time = int(item[1]['lastLogonTimestamp'][0])
+            if self.account_age > 0:
+                item_time = int(item[1]['lastLogonTimestamp'][0])
             
 
 
