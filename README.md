@@ -42,7 +42,7 @@ Place the file `ldap_inventory.py` into your base folder under `.\plugins\invent
 Create a file that ends with `ldap_inventory.yaml` in your base directory.
 It is recommended you vault the entire file if storing passwords in plaintext(until ansible supports vaulted strings in config files) `ansible-vault edit ldap_inventory.yaml`
 
->`LDAP_USERNAME`, `LDAP_PASSWORD` and `SEARCH_OU` environmental variables can be used instead of including them in the configuration file. This is helpful if using the plugin in [Ansible Tower/AWX](https://github.com/ansible/awx).
+>`LDAP_USER`, `LDAP_PASS` and `SEARCH_OU` environmental variables can be used instead of including them in the configuration file. This is helpful if using the plugin in [Ansible Tower/AWX](https://github.com/ansible/awx).
 
 Example `ldap_inventory.yaml` :
 ```yaml
