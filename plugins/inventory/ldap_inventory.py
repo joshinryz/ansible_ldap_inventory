@@ -79,6 +79,8 @@ DOCUMENTATION = '''
              description: 
                 - "LDAP path to search for computer objects." 
                 - "Example: CN=Computers,DC=local,DC=com"
+             env:
+                - name: SEARCH_OU
              required: True
          username:
              description: 
@@ -86,11 +88,15 @@ DOCUMENTATION = '''
                 - "Examples:"
                 - "  username@local.com"
                 - "  domain\\\\username"
+             env:
+               - name: LDAP_USER
              required: False
          password:
              description: 
                 - "LDAP user password used to bind our LDAP search."
                 - "Example: Password123!"
+             env:
+               - name: LDAP_PASS
              required: False
          ldap_filter:
              description: 
@@ -275,9 +281,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         """
         self.domain = self.get_option('domain')
         self.port = self.get_option('port')
-        self.username = os.getenv('LDAP_USER') or self.get_option('username')
-        self.password = os.getenv('LDAP_PASS') or self.get_option('password')
-        self.search_ou = os.getenv('SEARCH_OU') or self.get_option('search_ou')
+        self.username = self.get_option('username')
+        self.password = self.get_option('password')
+        self.search_ou = self.get_option('search_ou')
         self.group_membership = self.get_option('group_membership')
         self.account_age = self.get_option('account_age')
         self.validate_certs = self.get_option('validate_certs')
