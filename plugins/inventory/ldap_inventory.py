@@ -345,6 +345,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             except ldap.LDAPError as err:
                 raise AnsibleError("Failed to simple bind against LDAP host '%s': %s " % (conn_url, to_native(err)))
         else:
+            # Windows AD does not allow seal/sign when over TLS
+            if ldap_url.urlscheme == 'ldaps':
+                self.ldap_session.set_option(ldap.OPT_X_SASL_SSF_MAX, 0)
+
             try:
                 self.ldap_session.sasl_gssapi_bind_s()
             except ldap.AUTH_UNKNOWN as err:
