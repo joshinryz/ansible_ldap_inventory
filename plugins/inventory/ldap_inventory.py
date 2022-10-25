@@ -329,7 +329,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         if self.validate_certs is False :
             ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_ALLOW) 
         
-        if not ldap.TLS_AVAIL and conn_url.urlscheme == 'ldaps':
+        if not ldap.TLS_AVAIL and ldap_url.urlscheme == 'ldaps':
             raise AnsibleLookupError("Cannot use TLS as the local LDAP installed has not been configured to support it")
         
         conn_url = ldap_url.initializeUrl()
