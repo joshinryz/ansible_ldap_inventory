@@ -329,7 +329,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         if self.validate_certs is False :
             ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_ALLOW) 
         
-        if not ldap.TLS_AVAIL and conn_url.urlscheme == 'ldaps':
+        if not ldap.TLS_AVAIL and ldap_url.urlscheme == 'ldaps':
             raise AnsibleLookupError("Cannot use TLS as the local LDAP installed has not been configured to support it")
         
         conn_url = ldap_url.initializeUrl()
@@ -345,6 +345,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             except ldap.LDAPError as err:
                 raise AnsibleError("Failed to simple bind against LDAP host '%s': %s " % (conn_url, to_native(err)))
         else:
+            # Windows AD does not allow seal/sign when over TLS
+            if ldap_url.urlscheme == 'ldaps':
+                self.ldap_session.set_option(ldap.OPT_X_SASL_SSF_MAX, 0)
+
             try:
                 self.ldap_session.sasl_gssapi_bind_s()
             except ldap.AUTH_UNKNOWN as err:
