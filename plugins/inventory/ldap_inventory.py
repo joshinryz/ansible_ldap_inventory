@@ -482,7 +482,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 if len(ldapSearch) > 0 : 
                     for g in ldapSearch : 
                         if re.search("^cn", str(g[0]).lower()):
-                            groupName = g[0].lower().split(",",1)[0][3:]
+                            groupName = g[0].replace("-","_").replace(" ","_").lower().split(",",1)[0][3:]
                             ldapGroups.append(groupName)
                 #Debug the search settings used to find groups. 
                 display.debug("DEBUG: ldap search for groups using settings - base=%s, scope=%s, filterstr=%s" % (root_ou,ldap_search_scope,groupFilter) )
